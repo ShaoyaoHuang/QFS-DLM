@@ -1,0 +1,20 @@
+import torch
+from transformers import AutoTokenizer, AutoModel
+from transformers import DPRQuestionEncoder, DPRQuestionEncoderTokenizer
+from transformers import DPRContextEncoder, DPRContextEncoderTokenizer
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] ="4"
+# DPR model
+dpr_query_tokenizer = DPRQuestionEncoderTokenizer.from_pretrained("facebook/dpr-question_encoder-multiset-base")
+dpr_query_encoder = DPRQuestionEncoder.from_pretrained("facebook/dpr-question_encoder-multiset-base").eval().to("cuda")
+dpr_ctx_tokenizer = DPRContextEncoderTokenizer.from_pretrained("facebook/dpr-ctx_encoder-multiset-base")
+dpr_ctx_encoder = DPRContextEncoder.from_pretrained("facebook/dpr-ctx_encoder-multiset-base").eval().to("cuda")
+query = ["do gasoline economy standards help reducing emissions and combat global warming?","does meeting unfriendly nations helping diplomacy?"]
+contexts = ["the most basics function of fuel economy standards is that they help the average cars burn less gasoline so emit less \# into the atmosphere. the net effect is a reduction in greenhouse gas emission into the atmosphere which lowers the net human contribution to global warming.","michigan democrat congressman dave hoekstra responding to the notion of these requests predicted `` that would be an unsupportable positions for the president of the united states to be putting in [ \# ]. ''"]
+# Compute DPR embeddings
+dpr_query_input = dpr_query_tokenizer(query, padding=True, truncation=True, return_tensors='pt')['input_ids'].to("cuda")
+dpr_query_emb = dpr_query_encoder(dpr_query_input).pooler_output
+dpr_ctx_input = dpr_ctx_tokenizer(contexts, padding=True, truncation=True, return_tensors='pt').to("cuda")
+dpr_ctx_emb = dpr_ctx_encoder(**dpr_ctx_input).pooler_output
+score=torch.sum(dpr_query_emb * dpr_ctx_emb,dim=1)#.transpose(0,1)
+print(score)
