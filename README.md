@@ -1,1 +1,1 @@
-The QFS-DLM code is being gradually organized and distributed.
+The code is being gradually organized and made available. We have already open-sourced the core computation components.
