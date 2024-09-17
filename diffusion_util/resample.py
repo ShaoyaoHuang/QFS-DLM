@@ -138,9 +138,9 @@ class LossSecondMomentResampler(LossAwareSampler):
         if not self._warmed_up():
             return np.ones([self.diffusion.num_timesteps], dtype=np.float64)
         weights = np.sqrt(np.mean(self._loss_history ** 2, axis=-1))
-        weights /= np.sum(weights)
-        weights *= 1 - self.uniform_prob
-        weights += self.uniform_prob / len(weights)
+        weights =weights/ np.sum(weights)
+        weights =weights*( 1 - self.uniform_prob)#修改
+        weights =weights+ (self.uniform_prob / len(weights))
         return weights
 
     def update_with_all_losses(self, ts, losses):
@@ -151,7 +151,7 @@ class LossSecondMomentResampler(LossAwareSampler):
                 self._loss_history[t, -1] = loss
             else:
                 self._loss_history[t, self._loss_counts[t]] = loss
-                self._loss_counts[t] += 1
+                self._loss_counts[t] =self._loss_counts[t]+ 1
 
     def _warmed_up(self):
         return (self._loss_counts == self.history_per_term).all()
