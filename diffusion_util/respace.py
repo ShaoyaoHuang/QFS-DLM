@@ -3,7 +3,6 @@ import torch as th
 
 from diffusion_util.gaussian_diffusion import GaussianDiffusion
 
-
 def space_timesteps(num_timesteps, section_counts):
     """
     Create a list of timesteps to use from an original diffusion process,
@@ -54,9 +53,9 @@ def space_timesteps(num_timesteps, section_counts):
         taken_steps = []
         for _ in range(section_count):
             taken_steps.append(start_idx + round(cur_idx))
-            cur_idx += frac_stride
-        all_steps += taken_steps
-        start_idx += size
+            cur_idx =cur_idx + frac_stride
+        all_steps =all_steps + taken_steps
+        start_idx =start_idx + size
     return set(all_steps)
 
 
