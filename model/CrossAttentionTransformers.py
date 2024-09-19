@@ -41,7 +41,8 @@ class BasicTransformerBlock(nn.Module):
             dim_head=attention_head_dim,
             dropout=dropout,
             bias=attention_bias,
-        )  
+        )  # is a self-attention
+       
         self.ff = FeedForward(dim, dropout=dropout, activation_fn=activation_fn)
         self.attn2 = CrossAttention(
             query_dim=dim,
@@ -50,23 +51,24 @@ class BasicTransformerBlock(nn.Module):
             dim_head=attention_head_dim,
             dropout=dropout,
             bias=attention_bias,
-        )  
+        )  # is self-attn if context is none
+       
+   
         self.use_ada_layer_norm = num_embeds_ada_norm is not None
         if self.use_ada_layer_norm:
             self.norm1 = AdaLayerNorm(dim, num_embeds_ada_norm)
             self.norm2 = AdaLayerNorm(dim, num_embeds_ada_norm)
-            # self.norm4 = AdaLayerNorm(dim, num_embeds_ada_norm)
         else:
             self.norm1 = nn.LayerNorm(dim)
             self.norm2 = nn.LayerNorm(dim)
-            # self.norm4 = nn.LayerNorm(dim)
-        self.norm3 = nn.LayerNorm(dim)
         
+        
+        self.query_encoder = AutoModel.from_pretrained('facebook/spar-wiki-bm25-lexmodel-query-encoder')
     def _set_attention_slice(self, slice_size):
         self.attn1._slice_size = slice_size
         self.attn2._slice_size = slice_size
 
-    
+   
 
     '''
     input value
@@ -76,8 +78,9 @@ class BasicTransformerBlock(nn.Module):
     output value
     hidden_states : (batch_size, query_seq_len, hidden_size)
     '''
-    def forward(self, context=None,answer_attn=None,data_query=None,qa_model=None):
-        
+    #标记25
+    def forward(self, hidden_states, context=None,answer_attn=None,data_query=None,qa_model=None):
+       
         
         norm_hidden_states = (
             self.norm1(hidden_states)
@@ -85,14 +88,26 @@ class BasicTransformerBlock(nn.Module):
         
         hidden_states = self.attn1(norm_hidden_states) + hidden_states
         
+        norm_hidden_states1 = self.norm4(hidden_states)
+        data_query=self.qa_tokenizer(data_query, padding=True,truncation=True,return_tensors="pt")
+        question_emb=qa_model.distilbert.embeddings(data_query)
+        qa_hidden_states=qa_model.distilbert(inputs_embeds=torch.cat([question_emb,norm_hidden_states1],dim=1)).last_hidden_state[:,-48:,:]
+        
+        norm_hidden_states = (
+            self.norm4(hidden_states)
+        )
+        
+        hidden_states = self.attn4(hidden_states, context=data_query) + hidden_states
         
         norm_hidden_states = (
             self.norm2(hidden_states)
         )
         hidden_states = self.attn2(norm_hidden_states, context=context,answer_attn=answer_attn) + hidden_states
         
+        norm_hidden_states1 = self.norm4(hidden_states)
         
-        hidden_states = self.ff(self.norm3(hidden_states)) + hidden_states
+        
+        hidden_states = self.ff(self.norm3(hidden_states)) + norm_hidden_states1
 
         return hidden_states
 
@@ -114,6 +129,8 @@ class CrossAttention(nn.Module):
 
     def __init__(
         self,
+        query_dim: int,
+        cross_attention_dim: Optional[int] = None,
         heads: int = 8,
         dim_head: int = 64,
         dropout: float = 0.0,
@@ -125,6 +142,7 @@ class CrossAttention(nn.Module):
 
         self.scale = dim_head**-0.5
         self.heads = heads
+        
         # for slice_size > 0 the attention score computation
         # is split across the batch axis to save memory
         # You can set slice_size with `set_attention_slice`
@@ -153,20 +171,23 @@ class CrossAttention(nn.Module):
         tensor = tensor.permute(0, 2, 1, 3).reshape(batch_size // head_size, seq_len, dim * head_size)
         return tensor
 
-    def forward(self, hidden_states, mask=None,answer_attn=None):
+    def forward(self, hidden_states, context=None, mask=None,answer_attn=None):
         batch_size, sequence_length, _ = hidden_states.shape
 
         query = self.to_q(hidden_states)
-        # print("context:",context)
-        # print("context:",context.size())
-        # import os
-        # os._exit(0)
+      
+        import os
+        os._exit(0)
         context = context if context is not None else hidden_states
         key = self.to_k(context)
         value = self.to_v(context)
 
         dim = query.shape[-1]
-    
+        #our
+        
+        if answer_attn is not None:
+            key=key+answer_attn.unsqueeze(dim=2)
+            
         query = self.reshape_heads_to_batch_dim(query)
         key = self.reshape_heads_to_batch_dim(key)
         value = self.reshape_heads_to_batch_dim(value)
@@ -177,18 +198,18 @@ class CrossAttention(nn.Module):
             # Some versions of xformers return output in fp32, cast it back to the dtype of the input
             hidden_states = hidden_states.to(query.dtype)
         else:#True
-            if self._slice_size is None or query.shape[0] // self._slice_size == 1:#True
+            if self._slice_size is None or query.shape[0] // self._slice_size == 1:
                 hidden_states = self._attention(query, key, value)
             else:
                 hidden_states = self._sliced_attention(query, key, value, sequence_length, dim)
-        
+    
         hidden_states = self.to_out[0](hidden_states)
         # dropout
         hidden_states = self.to_out[1](hidden_states)
         return hidden_states
 
     def _attention(self, query, key, value):
-        
+        # TODO: use baddbmm for better performance
         if query.device.type == "mps":
             # Better performance on mps (~20-25%)
             attention_scores = torch.einsum("b i d, b j d -> b i j", query, key) * self.scale
@@ -225,7 +246,7 @@ class CrossAttention(nn.Module):
                 attn_slice = (
                     torch.matmul(query[start_idx:end_idx], key[start_idx:end_idx].transpose(1, 2)) * self.scale
                 )  # TODO: use baddbmm for better performance
-            attn_slice = attn_slice.softmax(dim=-1)
+            attn_slice = attn_slice.softmax(dim=1)
             if query.device.type == "mps":
                 attn_slice = torch.einsum("b i j, b j d -> b i d", attn_slice, value[start_idx:end_idx])
             else:
@@ -237,7 +258,7 @@ class CrossAttention(nn.Module):
         hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
         return hidden_states
 
-    
+   
 
 
 class FeedForward(nn.Module):
@@ -300,7 +321,7 @@ class GEGLU(nn.Module):
         if gate.device.type != "mps":
             return F.gelu(gate)
         # mps: gelu is not implemented for float16
-        return F.gelu(gate.to(dtype=torch.float32))
+        return F.gelu(gate.to(dtype=torch.float32)).to(dtype=gate.dtype)
 
     def forward(self, hidden_states):
         hidden_states, gate = self.proj(hidden_states).chunk(2, dim=-1)
