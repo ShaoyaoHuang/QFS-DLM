@@ -74,13 +74,13 @@ def load_s2s_data(args, padding_mode, split, tokenizer):
 
     print("example of src text: ", src[50])
     print("example of tgt text: ", tgt[50])
-
-    if padding_mode == 'max_len':
+   
+    if padding_mode == 'max_len':#标记9
         if args.data_name == "squadqg_data":
             dataset = QG_dataset_Diff(src, tgt, tokenizer, src_maxlength=args.src_max_len,
                                       answer_maxlength=args.answer_max_len, tgt_maxlength=args.tgt_max_len)
         else:
-            dataset = S2S_dataset(src, tgt, tokenizer, src_maxlength=args.src_max_len, tgt_maxlength=args.tgt_max_len)
+            dataset = S2S_dataset(src, tgt, tokenizer, src_maxlength=args.src_max_len, tgt_maxlength=args.tgt_max_len,data_type=split)
     elif padding_mode == 'block':
         print("padding block is under realization")
         pass
@@ -136,8 +136,7 @@ def load_s2s_data_AR(args, padding_mode, split, tokenizer):
                 line = line.strip()
                 text = line
                 tgt.append(text)
-        # src = src[:100]
-        # tgt = tgt[:100]
+        
 
     elif split == 'test':
 
@@ -322,44 +321,76 @@ class S2S_AR_dataset(Dataset):
         def fn(features):
             src_tensor = torch.cat([feature[0] for feature in features])
             tgt_tensor = torch.cat([feature[1] for feature in features])
-            # print("src shape:", src_tensor.shape)
-            # print("tgt shape:", tgt_tensor.shape)
+            
             return { "input_ids": src_tensor, "attention_mask": (src_tensor != 0).long(),
                      "labels": tgt_tensor}
 
         return fn
 
 class S2S_dataset(Dataset):
-    def __init__(self, src, tgt, tokenizer, src_maxlength=144, tgt_maxlength=32):
+    def __init__(self, src, tgt, tokenizer, src_maxlength=144, tgt_maxlength=32,data_type=None):
         self.src = src
         self.tgt = tgt
         self.tokenizer = tokenizer
         self.src_maxlength = src_maxlength
         self.tgt_maxlength = tgt_maxlength
-
+        self.dpr_score=torch.load('/data1/hsy/Debatepedia/genie/dpr_score/dpr_score.pt').tolist()
+        
+        path_file="/data1/hsy/Debatepedia/genie/datasets2/xsum_data3/answer_attn"
+        if data_type=="train":# or data_type=="test"
+            self.answer_attn=torch.load(path_file+'/train_answer_attn.pt').tolist()
+            file_name="/data1/hsy/Debatepedia/bart_test-main/data/train_query"#query
+            with open(file_name, 'r') as f:
+                self.data_query = f.readlines()
+            
+        elif data_type=="dev":
+            self.answer_attn=torch.load(path_file+'/val_answer_attn.pt').tolist()
+            file_name="/data1/hsy/Debatepedia/bart_test-main/data/val_query"#query
+            with open(file_name, 'r') as f:
+                self.data_query = f.readlines()
+            
+        else:
+            self.answer_attn=torch.load(path_file+'/test_answer_attn.pt').tolist()
+            
+            file_name="/data1/hsy/Debatepedia/bart_test-main/data/test_query"#query
+            with open(file_name, 'r') as f:
+                self.data_query = f.readlines()
+        for i in range(len(self.data_query)):
+            self.data_query[i]=self.data_query[i][4:-7]
+        # print(answer_attn)
+        # print(answer_attn.size())
+        # os._exit(0)
     def __getitem__(self, index):
         src_example = self.src[index]
         tgt_example = self.tgt[index]
-
+        dpr_score=self.dpr_score[index]
+        answer_attn=self.answer_attn[index]
+        data_query=self.data_query[index]
         src_input_ids = self.tokenizer.encode(src_example, add_special_tokens=True,
                                         max_length=self.src_maxlength, truncation=True,
                                        padding='max_length',return_tensors='pt')
         tgt_input_ids = self.tokenizer.encode(tgt_example, add_special_tokens=True,
                                               max_length=self.tgt_maxlength, truncation=True,
                                               padding='max_length', return_tensors='pt')
+        
 
-        return src_input_ids, tgt_input_ids
+        return src_input_ids, tgt_input_ids, dpr_score,answer_attn,data_query
 
     def __len__(self):
         return len(self.src)
 
     @classmethod
-    def get_collate_fn(cls):
+    def get_collate_fn(cls):#标记22
         def fn(features):
             src_tensor = torch.cat([feature[0] for feature in features])
             tgt_tensor = torch.cat([feature[1] for feature in features])
+            dpr_score=[feature[2] for feature in features]
+            answer_attn=[feature[3] for feature in features]
+            
+            data_query = [feature[4] for feature in features]
             return { "src_input_ids": src_tensor, "src_attention_mask": (src_tensor != 0).long(),
-                     "tgt_input_ids": tgt_tensor, "tgt_attention_mask": (tgt_tensor != 0).long() }
+                     "tgt_input_ids": tgt_tensor, "tgt_attention_mask": (tgt_tensor != 0).long(),
+                     "dpr_score": dpr_score,"answer_attn":answer_attn,"data_query":data_query}
 
         return fn
 
