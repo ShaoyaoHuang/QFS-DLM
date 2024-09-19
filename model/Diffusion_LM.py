@@ -154,7 +154,7 @@ class Diffusion_LM(nn.Module):
             text_emb = hidden_repr
             emb_norm = (self.lm_head.weight ** 2).sum(-1).view(-1, 1)  # vocab
             text_emb_t = torch.transpose(text_emb.view(-1, text_emb.size(-1)), 0, 1)  # d, bsz*seqlen
-            arr_norm = (text_emb ** 2).sum(-1).view(-1, 1)  # bsz*seqlen, 1
+            arr_norm = (text_emb ** 2).sum(-1).view( 1)  # bsz*seqlen, 1
             dist = emb_norm + arr_norm.transpose(0, 1) - 2.0 * torch.mm(self.lm_head.weight,
                                                                      text_emb_t)  # (vocab, d) x (d, bsz*seqlen)
             scores = torch.sqrt(torch.clamp(dist, 0.0, np.inf)).view(emb_norm.size(0), hidden_repr.size(0),
