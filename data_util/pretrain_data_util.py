@@ -50,20 +50,10 @@ def load_pretrain_data(args, padding_mode, tokenizer, data_name = None):
                 input_id_list = input_id_list_pre
             else:
                 input_id_list = np.concatenate((input_id_list, input_id_list_pre), axis=0)
-            # with open(path, "r", encoding="utf-8") as ifile:
-            #     for line in tqdm(ifile):
-            #         line = line.strip()
-            #         text = line
-            #         tgt.append(text)
+           
 
     elif data_name == 'realnews':
-        # for i in range(10):
-        #     path = os.path.join(args.data_path, args.data_name + str(i+1) + '.txt')
-        #     with open(path, "r", encoding="utf-8") as ifile:
-        #         for line in tqdm(ifile):
-        #             line = line.strip()
-        #             text = line
-        #             tgt.append(text)
+        
         for i in range(10):
             path = os.path.join(args.data_path, args.data_name + str(i+1) + '.npy')
             input_id_list_pre = np.load(path, allow_pickle=True)
@@ -185,13 +175,9 @@ class Pre_dataset_type2(Dataset):
 
         src_input_ids[mask_index] = self.mask_token_index
 
-        # print("mask_index:", mask_index)
-        # mask_span_len
-        # mask_id_mask = torch.full(src_input_ids.shape, False, dtype=torch.bool)
+       
         retain_id_mask = torch.full(src_input_ids.shape, True, dtype=torch.bool)
-        # mask_id_mask[mask_index] = True
-
-        # del_index = mask_index.tolist()
+        
         del_index = list(range(mask_index + 1, mask_index + mask_span_len))
         del_index = torch.from_numpy(np.array(del_index))
         retain_id_mask[del_index] = False
