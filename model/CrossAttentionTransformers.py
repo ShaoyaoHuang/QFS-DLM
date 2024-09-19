@@ -116,7 +116,6 @@ class CrossAttention(nn.Module):
     def __init__(
         self,
         query_dim: int,
-        cross_attention_dim: Optional[int] = None,
         heads: int = 8,
         dim_head: int = 64,
         dropout: float = 0.0,
@@ -257,7 +256,6 @@ class FeedForward(nn.Module):
 
     def __init__(
         self,
-        dim: int,
         dim_out: Optional[int] = None,
         mult: int = 4,
         dropout: float = 0.0,
