@@ -34,18 +34,7 @@ def load_data_text(data_args, emb_model=None, padding_mode='max_len', split='tra
     '''
     load embedding model
     '''
-    # if data_args.token_emb_type == 'random' and emb_model is None:
-    #     emb_model = torch.nn.Embedding(tokenizer.vocab_size, data_args.in_channel)
-    #     print('initializing the random embeddings', emb_model)
-    #     torch.nn.init.normal_(emb_model.weight)
-    #     path_save = f'{data_args.checkpoint_path}/random_emb.torch'
-    #     print(f'save the random encoder to {data_args.checkpoint_path}/random_emb.torch')
-    #     torch.save(emb_model.state_dict(), path_save)
-    # elif data_args.token_emb_type == 'pretrain':
-    #     # TODO: finish pretrain embedding setting
-    #     print('initializing the pretrain embeddings', emb_model)
-    # else:
-    #     return NotImplementedError
+    
 
     if return_hidden:
         '''
@@ -68,26 +57,14 @@ def load_data_text(data_args, emb_model=None, padding_mode='max_len', split='tra
         load query embedding dataloader
         '''
         query_emb_dataset = Text_Hidden_dataset(dataset, hidden_state_set)
-        # query_dataloader = DataLoader(query_emb_dataset, batch_size=data_args.batch_size, drop_last=False,
-        #                               num_workers=20, collate_fn=Text_Hidden_dataset.get_collate_fn())
-
+        
         emb_model.cpu()
         return query_emb_dataset, emb_model
 
     else:
         return dataset, emb_model
 
-    # for input_ids in dataset['word_ids']:
-    #     if data_args.experiment.startswith('random'):
-    #         hidden_state = model(torch.tensor(input_ids))
-    #     elif data_args.experiment == 'gpt2_pre_compress':
-    #         input_ids2 = torch.tensor(input_ids).to(model.device)
-    #         input_embs = model.transformer.wte(input_ids2)  # input_embs
-    #         hidden_state = model.down_proj(input_embs)
-    #         hidden_state = hidden_state * data_args.emb_scale_factor
-    #     elif data_args.experiment == 'glove':
-    #         hidden_state = model(torch.tensor(input_ids))
-    #     result_train_lst.append({'input_ids': input_ids, 'hidden_states': hidden_state.cpu().tolist()})
+    
 
 
 def get_query_corpus(args, padding_mode, split, tokenizer):
@@ -318,9 +295,7 @@ def load_train_reference_from_stream(input_file, trainer_id=0, trainer_num=1):
     """Reads a tab separated value file."""
     with open(input_file, 'r', encoding='utf8') as f:
         reader = csv_reader(f, trainer_id=trainer_id, trainer_num=trainer_num)
-        #headers = 'query_id\tpos_id\tneg_id'.split('\t')
-
-        #Example = namedtuple('Example', headers)
+        
         qrel = {}
         for [topicid, _, docid, rel] in reader:
             topicid = int(topicid)
@@ -340,4 +315,3 @@ def load_id_text(file_name):
             id, text = line.split('\t')
             id_text[id] = text
     return id_text
-
