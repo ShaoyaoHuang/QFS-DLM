@@ -152,7 +152,7 @@ class Diffusion_LM(nn.Module):
             return self.lm_head(hidden_repr)
         elif self.logits_mode == 2:
             text_emb = hidden_repr
-            emb_norm = (self.lm_head.weight ** 2).sum(-1).view(-1, 1)  # vocab
+            emb_norm = (self.lm_head.weight ** 2).sum(-1).view(1, -1)  # vocab
             text_emb_t = torch.transpose(text_emb.view(-1, text_emb.size(-1)), 0, 1)  # d, bsz*seqlen
             arr_norm = (text_emb ** 2).sum(-1).view( 1)  # bsz*seqlen, 1
             dist = emb_norm + arr_norm.transpose(0, 1) - 2.0 * torch.mm(self.lm_head.weight,
@@ -181,7 +181,7 @@ class Diffusion_LM(nn.Module):
         seq_length = x.size(1)
         position_ids = self.position_ids[:, : seq_length]
         # print(emb_x.shape, emb.shape, self.position_embeddings)
-        emb_inputs = self.position_embeddings(position_ids) + emb_x + emb.unsqueeze(1).expand(-1, seq_length, -1)
+        emb_inputs = self.position_embeddings(position_ids) + emb_x + emb.unsqueeze(1).expand(seq_length,-1,  -1)
         emb_inputs = self.dropout(self.LayerNorm(emb_inputs))
 
         # encode embedding
