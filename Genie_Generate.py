@@ -1,3 +1,6 @@
+import time
+from datetime import datetime, timedelta
+
 import os
 from util import logger
 from train_util import dist_util
@@ -9,7 +12,7 @@ from util.util import (
 import torch
 import collections
 import argparse
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer,AutoModelForQuestionAnswering
 import numpy as np
 from functools import partial
 from data_util.s2s_data_util import load_s2s_data
@@ -28,14 +31,14 @@ from transformers import (
 from data_util.text_data_util import load_data_text
 from tqdm import tqdm
 import random
-
+os.environ['CUDA_VISIBLE_DEVICES'] ="2,3"
 
 def get_arguments():
     parser = argparse.ArgumentParser()
 
     # out path
-    parser.add_argument('--generate_path', type=str, default='', help='output path')
-    parser.add_argument('--eval_model_path', type=str, default='', help='model path')
+    parser.add_argument('--generate_path', type=str, default='/data1/hsy/Debatepedia/genie/datasets/duc/generate', help='output path')
+    parser.add_argument('--eval_model_path', type=str, default='/data1/hsy/Debatepedia/genie/datasets/duc/log/ema_0.9999_checkpoint-70000', help='model path')
     parser.add_argument('--num_samples', type=int, default=50, help='sample query')
     parser.add_argument('--interval_step', type=int, default=1, help='inference t interval step')
 
@@ -72,8 +75,8 @@ def get_arguments():
     parser.add_argument("--rescale_timesteps", default=True, action="store_false", help="about time rescale")
 
     # data args
-    parser.add_argument('--data_path', type=str, default='', help='data path')
-    parser.add_argument('--data_name', type=str, default='', help='data name')
+    parser.add_argument('--data_path', type=str, default='/data1/hsy/Debatepedia/genie/datasets/duc', help='data path')
+    parser.add_argument('--data_name', type=str, default='xsum_data', help='data name')
     # for seq2seq
     parser.add_argument('--src_max_len', type=int, default=144, help='src max len')
     parser.add_argument('--tgt_max_len', type=int, default=32, help='tgt max len')
@@ -108,19 +111,11 @@ def load_states_from_checkpoint(model_file: str) -> CheckpointState:
 rounding
 '''
 def denoised_fn_round(args, model, text_emb, t):
-    # thresh_t = 50
-    # # print(thresh_t)
-    # if thresh_t is not None and t[0] > thresh_t:
-    #     return text_emb
+ 
 
     if args.model_arch == '1d-unet':
         text_emb = text_emb.permute(0, 2, 1)
-    # return text_emb
-    # print(t.float().mean(), t[0])
-
-    # assert t.float().mean() == t[0].float()
-
-    # print(text_emb.shape) # bsz, seqlen, dim
+    
     down_proj_emb = model.weight  # input_embs
     # print(t)
     old_shape = text_emb.shape
@@ -137,12 +132,7 @@ def denoised_fn_round(args, model, text_emb, t):
             dist = torch.clamp(dist, 0.0, np.inf)
             # print(dist.shape)
         topk_out = torch.topk(-dist, k=1, dim=0)
-        #     adjacency = down_proj_emb.unsqueeze(1).expand(-1, text_emb.size(0), -1) - text_emb.unsqueeze(0).expand(
-        #         down_proj_emb.size(0), -1, -1)
-        #     adjacency = -th.norm(adjacency, dim=-1)
-        # topk_out = th.topk(adjacency, k=1, dim=0)
-        # print(topk_out1.indices == topk_out.indices)
-        # assert th.all(topk_out1.indices == topk_out.indices)
+        
         return topk_out.values, topk_out.indices
 
     def get_knn(down_proj_emb, text_emb, dist='l2'):
@@ -234,7 +224,7 @@ def main():
     sample_fn = (
         diffusion.p_sample_loop
     )
-
+    
     if dist.get_world_size() > 1:
         emb_model = model.module.word_embedding
     else:
@@ -251,6 +241,7 @@ def main():
             model_kwargs=None,
             top_p=-1.0,
         )
+        
         print("sample result shape: ", sample.shape)
         print('decoding for e2e... ')
 
@@ -328,7 +319,8 @@ def main():
         else:
             logger.info("generate_path is None")
             exit(0)
-
+        model_name = "distilbert-base-uncased-distilled-squad"
+       
         for epoch in range(args.num_samples - epoch_num):
             each_sample_list = []
             print("-------------------------------------------------------------")
@@ -342,8 +334,11 @@ def main():
                 input_shape = (batch['src_input_ids'].shape[0], args.tgt_max_len, args.in_channel)
                 src_input_ids = batch['src_input_ids']
                 tgt_input_ids = batch['tgt_input_ids']
-                # print(p_input_ids.shape)
+                answer_attn=torch.tensor(batch["answer_attn"])#修改26
+                
+                
                 src_attention_mask = batch['src_attention_mask']
+                #标记24
                 model_kwargs = {'src_input_ids' : src_input_ids, 'src_attention_mask': src_attention_mask}
 
                 sample = sample_fn(
@@ -355,33 +350,33 @@ def main():
                     top_p=-1.0,
                     interval_step=args.interval_step,
                 )
-
+              
+                
                 print("sample result shape: ", sample.shape)
                 print('decoding for e2e... ')
-
+                
                 logits = model.module.get_logits(sample)
+                
                 cands = torch.topk(logits, k=1, dim=-1)
                 sample_id_list = cands.indices
-                #print("decode id list example :", type(sample_id_list[0]), "  ", sample_id_list[0])
+               
 
                 '''
                 for s2s
                 '''
-                # print("src text: ", tokenizer.decode(src_input_ids.squeeze()))
-                # print("tgt text: ", tokenizer.decode(tgt_input_ids.squeeze()))
+               
 
                 print("sample control generate query: ")
                 for sample_id in sample_id_list:
                     sentence = tokenizer.decode(sample_id.squeeze())
                     each_sample_list.append(clean(sentence))
-                    # print(sentence)
-
-            # total_sample_list.append(each_sample_list)
+                    
             out_path = os.path.join(args.generate_path, "rank" + str(dist.get_rank()) + "_gen_seed_101" +
                                     "_num" + str(args.num_samples) + "_epoch" + str(epoch + 1 + epoch_num) + ".txt")
             with open(out_path, 'w') as f:
                 for sentence in each_sample_list:
                     f.write(sentence + '\n')
+            
 
     else:
         return NotImplementedError
