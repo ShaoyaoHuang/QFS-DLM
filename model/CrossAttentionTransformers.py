@@ -76,8 +76,7 @@ class BasicTransformerBlock(nn.Module):
     output value
     hidden_states : (batch_size, query_seq_len, hidden_size)
     '''
-    #标记25
-    def forward(self, hidden_states, context=None,answer_attn=None,data_query=None,qa_model=None):#标记7
+    def forward(self, context=None,answer_attn=None,data_query=None,qa_model=None):
         
         
         norm_hidden_states = (
@@ -115,7 +114,6 @@ class CrossAttention(nn.Module):
 
     def __init__(
         self,
-        query_dim: int,
         heads: int = 8,
         dim_head: int = 64,
         dropout: float = 0.0,
@@ -155,7 +153,7 @@ class CrossAttention(nn.Module):
         tensor = tensor.permute(0, 2, 1, 3).reshape(batch_size // head_size, seq_len, dim * head_size)
         return tensor
 
-    def forward(self, hidden_states, context=None, mask=None,answer_attn=None):
+    def forward(self, hidden_states, mask=None,answer_attn=None):
         batch_size, sequence_length, _ = hidden_states.shape
 
         query = self.to_q(hidden_states)
@@ -302,7 +300,7 @@ class GEGLU(nn.Module):
         if gate.device.type != "mps":
             return F.gelu(gate)
         # mps: gelu is not implemented for float16
-        return F.gelu(gate.to(dtype=torch.float32)).to(dtype=gate.dtype)
+        return F.gelu(gate.to(dtype=torch.float32))
 
     def forward(self, hidden_states):
         hidden_states, gate = self.proj(hidden_states).chunk(2, dim=-1)
