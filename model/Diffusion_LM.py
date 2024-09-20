@@ -43,17 +43,17 @@ class Diffusion_LM(nn.Module):
             init_pretrained=True,
             logits_mode=1,
             token_emb_type='pretrain',
-            num_heads=1,
-            channel_mult=(1, 2, 4, 8),
-            use_scale_shift_norm=False,
-            training_mode='emb',
-            experiment_mode='lm',
-            num_heads_upsample=-1,
-            use_checkpoint=False,
-            num_classes=None,
-            conv_resample=True,
-            attention_resolutions,
-            num_res_blocks,
+            # num_heads=1,
+            # channel_mult=(1, 2, 4, 8),
+            # use_scale_shift_norm=False,
+            # training_mode='emb',
+            # experiment_mode='lm',
+            # num_heads_upsample=-1,
+            # use_checkpoint=False,
+            # num_classes=None,
+            # conv_resample=True,
+            # attention_resolutions,
+            # num_res_blocks,
     ):
         super().__init__()
         self.in_channels = in_channels
@@ -68,9 +68,8 @@ class Diffusion_LM(nn.Module):
         config.hidden_dropout_prob = self.dropout
         print(config)
 
-       
         self.word_embedding = nn.Embedding(vocab_size, self.in_channels)
-       
+        # position embedding
         self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
 
@@ -84,12 +83,12 @@ class Diffusion_LM(nn.Module):
             return NotImplementedError
 
         if self.logits_mode == 2:
-            # self.lm_head = nn.Linear(self.in_channels, vocab_size, bias=False)
+            
             self.lm_head = nn.Linear(self.in_channels, vocab_size, bias=True)
         else:
             self.lm_head = nn.Linear(self.in_channels, vocab_size)
 
-        # share weight between lm_head and word_embedding
+        
         with torch.no_grad():
             self.lm_head.weight = self.word_embedding.weight
 
@@ -105,9 +104,7 @@ class Diffusion_LM(nn.Module):
         self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
 
-        # # label embedding
-        # if self.num_classes is not None:
-        #     self.label_emb = nn.Embedding(num_classes, time_embed_dim)
+     
 
         # input transform
         self.input_up_proj = nn.Sequential(
@@ -149,9 +146,9 @@ class Diffusion_LM(nn.Module):
             return self.lm_head(hidden_repr)
         elif self.logits_mode == 2:
             text_emb = hidden_repr
-            emb_norm = (self.lm_head.weight ** 2).sum(-1).view(-1, 1) 
-            text_emb_t = torch.transpose(text_emb.view(-1, text_emb.size(-1)), 0, 1)  
-            arr_norm = (text_emb ** 2).sum(-1).view(-1, 1) 
+            emb_norm = (self.lm_head.weight ** 2).sum(-1).view(-1, 1)  # vocab
+            text_emb_t = torch.transpose(text_emb.view(-1, text_emb.size(-1)), 0, 1)  # d, bsz*seqlen
+            arr_norm = (text_emb ** 2).sum(-1).view(-1, 1)  
             dist = emb_norm + arr_norm.transpose(0, 1) - 2.0 * torch.mm(self.lm_head.weight,
                                                                      text_emb_t)  
             scores = torch.sqrt(torch.clamp(dist, 0.0, np.inf)).view(emb_norm.size(0), hidden_repr.size(0),
@@ -183,7 +180,7 @@ class Diffusion_LM(nn.Module):
         return h
 
 
-#标记10
+
 class CrossAttention_Diffusion_LM(nn.Module):
     def __init__(
             self,
@@ -211,8 +208,7 @@ class CrossAttention_Diffusion_LM(nn.Module):
 
         cfg = BertConfig.from_pretrained(config_name)
         cfg.num_hidden_layers = 6
-
-        
+        self.passage_encoder = BertModel.from_pretrained(config_name, config=cfg)
     
 
 
@@ -227,6 +223,7 @@ class CrossAttention_Diffusion_LM(nn.Module):
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
 
         if self.logits_mode == 2:
+            
             self.lm_head = nn.Linear(self.in_channels, vocab_size, bias=True)
         else:
             self.lm_head = nn.Linear(self.in_channels, vocab_size)
@@ -236,6 +233,8 @@ class CrossAttention_Diffusion_LM(nn.Module):
             self.lm_head.weight = self.word_embedding.weight
 
         
+
+        # time embedding layer
         time_embed_dim = model_channels * 4
         self.time_embed = nn.Sequential(
             nn.Linear(model_channels, time_embed_dim),
@@ -247,7 +246,7 @@ class CrossAttention_Diffusion_LM(nn.Module):
         self.register_buffer("position_ids", torch.arange(config.max_position_embeddings).expand((1, -1)))
         self.position_embeddings = nn.Embedding(config.max_position_embeddings, config.hidden_size)
 
-        #
+        
 
         # input transform
         self.input_up_proj = nn.Sequential(
@@ -282,7 +281,6 @@ class CrossAttention_Diffusion_LM(nn.Module):
             nn.Tanh(),
             nn.Linear(config.hidden_size, out_channels)
         )
-        
     def get_embeds(self, input_ids):
         return self.word_embedding(input_ids)
 
@@ -303,9 +301,10 @@ class CrossAttention_Diffusion_LM(nn.Module):
             return scores
         else:
             raise NotImplementedError
+    
     def forward(self, x, timesteps, src_input_ids, src_attention_mask, attention_mask=None,
-                answer_id=None, answer_mask=None, y=None, src_ids=None, answer_attn=None,data_query=None,x_t_2=None,x_t_3=None,train=False,qa_model=None):#标记6
-
+                answer_id=None, answer_mask=None, y=None, src_ids=None, src_mask=None,answer_attn=None,data_query=None,x_t_2=None,x_t_3=None,train=False,qa_model=None):#标记6
+        
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
         emb_x = self.input_up_proj(x)
         
@@ -313,12 +312,13 @@ class CrossAttention_Diffusion_LM(nn.Module):
         
         seq_length = x.size(1)
         position_ids = self.position_ids[:, : seq_length]
+
         emb_inputs = self.position_embeddings(position_ids) + emb_x + emb.unsqueeze(1).expand(-1, seq_length, -1)
         hidden_states = self.dropout(self.LayerNorm(emb_inputs))
+       
         
         
-        
-        if self.fix_encoder:#False
+        if self.fix_encoder:
             with torch.no_grad():
                 out = self.passage_encoder(input_ids=src_input_ids,
                                                  attention_mask=src_attention_mask)
@@ -328,7 +328,7 @@ class CrossAttention_Diffusion_LM(nn.Module):
                                        attention_mask=src_attention_mask)
             passage_hidden = out.last_hidden_state + 0 * out.pooler_output.unsqueeze(1)
 
-        if answer_id is not None:#False
+        if answer_id is not None:
             answer_hidden_states = hidden_states.clone()
             answer_out = self.passage_encoder(input_ids=answer_id,
                                               attention_mask=answer_mask)
@@ -340,39 +340,36 @@ class CrossAttention_Diffusion_LM(nn.Module):
                 
         
         data_query=self.query_encoder(data_query).last_hidden_state
-       
         
         
         
-        for block in self.transformer_blocks:#True
+        
+        for block in self.transformer_blocks:
             hidden_states = block(hidden_states, passage_hidden,answer_attn=answer_attn,data_query=data_query,qa_model=qa_model)
             
             
             
             
-      
+        import os
+        os._exit(0)
         
         
         
-      
-        
-        
-        
-        h = self.output_down_proj(hidden_states)#emb_x
+        h = self.output_down_proj(hidden_states)
         h = h.type(x.dtype)
         
         
         
-        
+       
         if train==True:
-            emb_2 = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+            
             emb_x_2 = self.input_up_proj(x_t_2)
             
-           
+            
             emb_inputs_2 = self.position_embeddings(position_ids) + emb_x_2 + emb.unsqueeze(1).expand(-1, seq_length, -1)
             hidden_states_2 = self.dropout(self.LayerNorm(emb_inputs_2))
          
-            for block in self.transformer_blocks:#True
+            for block in self.transformer_blocks:
                 hidden_states_2 = block(hidden_states_2, passage_hidden,answer_attn=answer_attn,data_query=data_query)
             
             
